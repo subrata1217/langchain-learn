@@ -2,6 +2,8 @@ from dotenv import load_dotenv
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
+from langchain_groq import ChatGroq
+import httpx
 
 load_dotenv()
 
@@ -31,13 +33,34 @@ Musk's political activities, views, and statements have made him a polarizing fi
         input_variables=["information"], template=summary_template
     )
 
-    # llm = ChatOpenAI(model="gpt-5-nano", temperature =0)
-    llm = ChatOllama(model="gemma3:270m", temperature=0)
+    # Prefer Ollama if available (local Ollama daemon or OLLAMA_URL configured)
+    try:
+        print("Running ChatGroq model...")
+        llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.7)
+        chain = summary_prompt_template | llm
+        response = chain.invoke(input={"information": information})
+        print(response.content)
 
-    chain = summary_prompt_template | llm
-    response = chain.invoke(input={"information": information})
+        print("Running ChatOllama model...")
 
-    print(response.content)
+        llm = ChatOllama(model="gemma3:270m", temperature=0)
+        chain = summary_prompt_template | llm
+        response = chain.invoke(input={"information": information})
+        print(response.content)
+    except httpx.ConnectError:
+        # Most likely the Ollama daemon isn't running or is unreachable
+        print("Could not connect to Ollama (connection refused).")
+        print("Options:\n 1) Start a local Ollama daemon (e.g. install and run ollama).\n 2) Set OLLAMA_URL to a reachable Ollama server.\n 3) Use OpenAI instead by setting OPENAI_API_KEY in your environment.")
+        # Try falling back to OpenAI if user has configured an API key
+        try:
+            print("Falling back to OpenAI Chat model...")
+            llm = ChatOpenAI(temperature=0)
+            chain = summary_prompt_template | llm
+            response = chain.invoke(input={"information": information})
+            print(response.content)
+        except Exception as e:
+            print("OpenAI fallback failed:", str(e))
+            print("If you want to use OpenAI, set the OPENAI_API_KEY environment variable (e.g. in a .env file) and try again.")
 
 if __name__ == "__main__":
     main()
